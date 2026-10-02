@@ -2,9 +2,12 @@
 
 import csv
 import sqlite3
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT.parent / "scripts"))
+from add_pokemon_learnsets import load_learnset_records, insert_learnsets
 STAT_NAMES = ('hp', 'attack', 'defense', 'special-attack', 'special-defense', 'speed')
 MOVE_CATEGORIES = {'status': '변화', 'physical': '물리', 'special': '특수'}
 MAX_POKEMON_ID = 649
@@ -130,6 +133,7 @@ def main():
         raise ValueError(f'Expected exactly one default form for every National Pokedex ID 1-{MAX_POKEMON_ID}')
 
     move_records = load_move_records(language)
+    learnset_records = load_learnset_records(ROOT)
 
     output = ROOT / 'Pokemon.db'
     if output.exists():
@@ -146,6 +150,7 @@ def main():
             connection.executemany('INSERT INTO Pokemon VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', records)
             connection.executemany('INSERT INTO PokemonMove VALUES (?, ?, ?, ?, ?, ?, ?, ?)', move_records)
             connection.executemany('INSERT INTO TypeEffectiveness VALUES (?, ?, ?)', effectiveness_records)
+            insert_learnsets(connection, learnset_records)
         if connection.execute('PRAGMA integrity_check').fetchall() != [('ok',)]:
             raise ValueError('SQLite integrity check failed')
         if connection.execute('SELECT * FROM Pokemon ORDER BY pokemon_id').fetchall() != records:
@@ -161,7 +166,8 @@ def main():
     finally:
         connection.close()
     print(f'Created {output}: {len(records)} Pokemon, {len(move_records)} moves, '
-          f'{len(type_records)} types, {len(effectiveness_records)} matchups; integrity_check=ok')
+          f'{len(type_records)} types, {len(effectiveness_records)} matchups, '
+          f'{len(learnset_records)} BW2 level-up moves; integrity_check=ok')
 
 
 if __name__ == '__main__':

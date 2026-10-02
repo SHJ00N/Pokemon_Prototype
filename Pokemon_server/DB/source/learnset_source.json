@@ -1,0 +1,22 @@
+{
+  "source": "https://github.com/PokeAPI/pokeapi/tree/bc92d3b6029ef1abe9e7ad424c400b338f3c11fe/data/v2/csv",
+  "commit": "bc92d3b6029ef1abe9e7ad424c400b338f3c11fe",
+  "downloaded_on": "2026-10-02",
+  "version_group": {
+    "id": 14,
+    "identifier": "black-2-white-2",
+    "generation_id": 5
+  },
+  "filters": {
+    "pokemon": "is_default=1 and species_id in 1..649",
+    "move_id": "1..559",
+    "pokemon_move_method_id": 1
+  },
+  "source_pokemon_moves_sha256": "22a807cef26891eeac0d0c900bd363e66baf421f7ee795bc7bc3e718f23b939e",
+  "filtered_rows": 9082,
+  "distinct_pokemon_move_pairs": 9082,
+  "files": {
+    "pokemon_levelup_moves_black2_white2.csv": "ffe23855efaab4a1dec509df8a9f5c88b548e58518be17fde760cbec2c35ca81"
+  },
+  "normalization": "Deduplicate pokemon_id/move_id pairs; discard learned level."
+}

@@ -5,16 +5,18 @@ internal sealed record TypeView(int TypeId, string Name, string ColorRgb);
 internal sealed record PokemonView(
     int PokemonId, string Name, int CurrentHp, int MaxHp, TypeView[] Types);
 
-internal sealed record MoveView(int MoveId, string Name, TypeView Type);
+internal sealed record MoveView(int MoveId, string Name, TypeView Type, int? Power = null, int? Accuracy = null);
 
 internal sealed record PokemonSelection(int PokemonId, int[] MoveIds);
-internal sealed record MoveChoice(int Slot);
+internal sealed record TeamSelection(PokemonSelection[] Pokemon);
+internal sealed record MoveChoice(int Slot = 0, int? SwitchSlot = null);
 internal sealed record AttackEvent(string Attacker, string MoveName, string Message,
-    int PlayerHp, int OpponentHp, bool Hit, int Damage);
+    int PlayerHp, int OpponentHp, bool Hit, int Damage, bool IsSwitch = false);
 
 internal sealed record PokemonResponse(
     PokemonView? Pokemon, string? Error, MoveView[]? Moves = null,
-    PokemonView? Opponent = null, AttackEvent[]? Actions = null, string? Winner = null);
+    PokemonView? Opponent = null, AttackEvent[]? Actions = null, string? Winner = null,
+    PokemonView[]? Team = null, int ActiveSlot = 1, bool RequiresSwitch = false);
 
 internal static class PokemonStatusRenderer
 {
@@ -114,7 +116,7 @@ internal static class PokemonStatusRenderer
         Console.Write(FitToWidth(move.Name, width - 5));
     }
 
-    private static string FitToWidth(string text, int width)
+    internal static string FitToWidth(string text, int width)
     {
         if (DisplayWidth(text) <= width)
             return text + new string(' ', width - DisplayWidth(text));

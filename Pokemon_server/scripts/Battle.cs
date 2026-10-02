@@ -1,33 +1,44 @@
 internal sealed class Battle
 {
-    private static readonly int[] PikachuMoveIds = [85, 98, 129, 231];
+    private static readonly int[] PikachuMoveIds = [85, 98, 435, 87];
     private readonly GameData data;
-    private readonly PokemonInfo player;
+    private readonly (PokemonInfo Pokemon, PokemonMoveInfo[] Moves)[] team;
+    private readonly int[] teamHp;
+    private int activeIndex;
+    private PokemonInfo player => team[activeIndex].Pokemon;
     private readonly PokemonInfo opponent;
-    private readonly PokemonMoveInfo[] playerMoves;
+    private PokemonMoveInfo[] playerMoves => team[activeIndex].Moves;
     private readonly PokemonMoveInfo[] opponentMoves;
-    private int playerHp;
+    private int playerHp { get => teamHp[activeIndex]; set => teamHp[activeIndex] = value; }
     private int opponentHp;
 
-    public Battle(GameData data, PokemonInfo player, PokemonMoveInfo[] playerMoves)
+    public Battle(GameData data, (PokemonInfo Pokemon, PokemonMoveInfo[] Moves)[] team)
     {
         this.data = data;
-        this.player = player;
-        this.playerMoves = playerMoves;
+        this.team = team;
+        teamHp = team.Select(member => member.Pokemon.BaseHp).ToArray();
         opponent = data.PokemonById[25];
         opponentMoves = PikachuMoveIds.Select(id => data.MovesById[id]).ToArray();
-        playerHp = player.BaseHp;
         opponentHp = opponent.BaseHp;
     }
 
     public PokemonResponse Start() => Response(null);
 
-    public PokemonResponse Play(int slot)
+    public PokemonResponse Play(MoveChoice choice)
     {
+        if (teamHp.All(hp => hp == 0) || opponentHp == 0)
+            return Response("전투가 이미 종료되었습니다.");
+        if (choice.SwitchSlot is int target)
+        {
+            if (choice.Slot != 0)
+                return Response("공격과 교체는 동시에 선택할 수 없습니다.");
+            return Switch(target);
+        }
+        if (playerHp == 0)
+            return Response("쓰러진 포켓몬을 교체해 주세요.");
+        int slot = choice.Slot;
         if (slot is < 1 or > 4)
             return Response("1~4번 기술을 선택해 주세요.");
-        if (playerHp == 0 || opponentHp == 0)
-            return Response("전투가 이미 종료되었습니다.");
 
         PokemonMoveInfo playerMove = playerMoves[slot - 1];
         PokemonMoveInfo opponentMove = opponentMoves[Random.Shared.Next(opponentMoves.Length)];
@@ -48,6 +59,28 @@ internal sealed class Battle
             actions.Add(Attack(false, opponentMove));
             if (playerHp > 0) actions.Add(Attack(true, playerMove));
         }
+        return Response(null, actions.ToArray());
+    }
+
+    private PokemonResponse Switch(int slot)
+    {
+        int index = slot - 1;
+        if (index < 0 || index >= team.Length)
+            return Response("교체할 포켓몬 번호는 1~3입니다.");
+        if (index == activeIndex)
+            return Response("이미 전투 중인 포켓몬입니다.");
+        if (teamHp[index] == 0)
+            return Response("쓰러진 포켓몬으로 교체할 수 없습니다.");
+        bool forced = playerHp == 0;
+        activeIndex = index;
+        var actions = new List<AttackEvent>
+        {
+            new("player", "", $"{player.Name}, 나와라!", playerHp, opponentHp, false, 0, true)
+        };
+        // 자발적 교체는 공격보다 먼저 처리하고, 상대의 공격을 받는다.
+        // 쓰러진 포켓몬의 강제 교체는 추가 턴을 소비하지 않는다.
+        if (!forced)
+            actions.Add(Attack(false, opponentMoves[Random.Shared.Next(opponentMoves.Length)]));
         return Response(null, actions.ToArray());
     }
 
@@ -97,10 +130,12 @@ internal sealed class Battle
         MoveView[] moves = playerMoves.Select(move =>
         {
             PokemonTypeInfo type = data.TypesById[move.TypeId];
-            return new MoveView(move.Id, move.Name, new TypeView(type.Id, type.Name, type.ColorRgb));
+            return new MoveView(move.Id, move.Name, new TypeView(type.Id, type.Name, type.ColorRgb), move.Power, move.Accuracy);
         }).ToArray();
         return new PokemonResponse(View(player, playerHp), error, moves,
             View(opponent, opponentHp), actions,
-            playerHp == 0 ? "server" : opponentHp == 0 ? "player" : null);
+            teamHp.All(hp => hp == 0) ? "server" : opponentHp == 0 ? "player" : null,
+            team.Select((member, index) => View(member.Pokemon, teamHp[index])).ToArray(),
+            activeIndex + 1, playerHp == 0 && teamHp.Any(hp => hp > 0) && opponentHp > 0);
     }
 }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -14,7 +14,7 @@ class Program
         GameData data = GameData.Load(databasePath);
         Console.WriteLine(
             $"Loaded {data.PokemonById.Count} Pokemon, {data.TypesById.Count} types, " +
-            $"{data.EffectivenessByType.Count} type matchups, and {data.MovesById.Count} moves from {databasePath}");
+            $"{data.EffectivenessByType.Count} type matchups, and {data.MovesById.Count} moves, {data.LearnableMovesByPokemonId.Values.Sum(ids => ids.Count)} learnset entries from {databasePath}");
 
         TcpListener server = new TcpListener(
             IPAddress.Any,
@@ -52,50 +52,49 @@ class Program
             AutoFlush = true
         };
 
-        PokemonSelection? selection;
-        try
+        writer.WriteLine(JsonSerializer.Serialize(PokemonCatalog.Create(data)));
+        string? selectionMessage = reader.ReadLine();
+        if (selectionMessage is null) return;
+
+        TeamSelection? selection;
+        try { selection = JsonSerializer.Deserialize<TeamSelection>(selectionMessage); }
+        catch (JsonException) { selection = null; }
+        void Reject(string error) => writer.WriteLine(JsonSerializer.Serialize(new PokemonResponse(null, error)));
+        if (selection?.Pokemon is not { Length: 3 } team)
         {
-            selection = JsonSerializer.Deserialize<PokemonSelection>(reader.ReadLine()
-                ?? throw new IOException("포켓몬 선택 요청을 받지 못했습니다."));
-        }
-        catch (JsonException)
-        {
-            writer.WriteLine(JsonSerializer.Serialize(
-                new PokemonResponse(null, "선택 요청 형식이 올바르지 않습니다.")));
+            Reject("포켓몬 3마리를 선택해 주세요.");
             return;
         }
 
-        if (selection is null || selection.MoveIds is null ||
-            selection.MoveIds.Length != 4 || selection.MoveIds.Distinct().Count() != 4)
+        var members = new List<(PokemonInfo Pokemon, PokemonMoveInfo[] Moves)>();
+        foreach (PokemonSelection? member in team)
         {
-            writer.WriteLine(JsonSerializer.Serialize(
-                new PokemonResponse(null, "서로 다른 기술 번호 4개를 선택해 주세요.")));
-            return;
-        }
-
-        if (!data.PokemonById.TryGetValue(selection.PokemonId, out PokemonInfo? pokemon))
-        {
-            writer.WriteLine(JsonSerializer.Serialize(
-                new PokemonResponse(null, $"도감번호 {selection.PokemonId}번 포켓몬을 찾을 수 없습니다.")));
-            return;
-        }
-
-        PokemonMoveInfo[] moves = new PokemonMoveInfo[4];
-        for (int i = 0; i < moves.Length; i++)
-        {
-            int moveId = selection.MoveIds[i];
-            if (!data.MovesById.TryGetValue(moveId, out PokemonMoveInfo? move))
+            if (member is null || member.MoveIds is not { Length: 4 } ids || ids.Distinct().Count() != 4)
             {
-                writer.WriteLine(JsonSerializer.Serialize(
-                    new PokemonResponse(null, $"기술 번호 {moveId}번을 찾을 수 없습니다.")));
+                Reject("각 포켓몬에 서로 다른 기술 4개를 선택해 주세요.");
                 return;
             }
-            moves[i] = move;
+            if (!data.PokemonById.TryGetValue(member.PokemonId, out PokemonInfo? pokemon))
+            {
+                Reject($"도감번호 {member.PokemonId}의 포켓몬을 찾을 수 없습니다.");
+                return;
+            }
+            var moves = new List<PokemonMoveInfo>();
+            foreach (int id in ids)
+            {
+                if (!data.MovesById.TryGetValue(id, out PokemonMoveInfo? move) ||
+                    !data.LearnableMovesByPokemonId[pokemon.Id].Contains(id))
+                {
+                    Reject($"{pokemon.Name}이(가) 레벨업으로 배울 수 없는 기술 번호입니다: {id}");
+                    return;
+                }
+                moves.Add(move);
+            }
+            members.Add((pokemon, moves.ToArray()));
         }
-
-        var battle = new Battle(data, pokemon, moves);
+        var battle = new Battle(data, members.ToArray());
         writer.WriteLine(JsonSerializer.Serialize(battle.Start()));
-        Console.WriteLine($"Battle started: {pokemon.Name} vs Pikachu");
+        Console.WriteLine($"Battle started: {members[0].Pokemon.Name} (3 Pokemon) vs Pikachu");
         while (true)
         {
             string? request = reader.ReadLine();
@@ -105,7 +104,7 @@ class Program
             catch (JsonException) { choice = null; }
             PokemonResponse response = choice is null
                 ? new PokemonResponse(null, "기술 선택 요청 형식이 올바르지 않습니다.")
-                : battle.Play(choice.Slot);
+                : battle.Play(choice);
             writer.WriteLine(JsonSerializer.Serialize(response));
             if (response.Winner is not null)
             {

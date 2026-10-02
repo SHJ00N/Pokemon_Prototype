@@ -36,3 +36,11 @@ CREATE TABLE TypeEffectiveness (
     multiplier REAL NOT NULL CHECK (multiplier IN (0.0, 0.5, 1.0, 2.0)),
     PRIMARY KEY (attack_type_id, defend_type_id)
 );
+
+CREATE TABLE PokemonLearnset (
+    pokemon_id INTEGER NOT NULL REFERENCES Pokemon(pokemon_id),
+    move_id INTEGER NOT NULL REFERENCES PokemonMove(move_id),
+    PRIMARY KEY (pokemon_id, move_id)
+);
+
+CREATE INDEX IX_PokemonLearnset_Move ON PokemonLearnset(move_id);

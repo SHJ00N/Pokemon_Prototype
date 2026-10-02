@@ -14,16 +14,20 @@ internal sealed class GameData
     public FrozenDictionary<int, PokemonMoveInfo> MovesById { get; }
     public FrozenDictionary<(int AttackTypeId, int DefendTypeId), double> EffectivenessByType { get; }
 
+    public FrozenDictionary<int, FrozenSet<int>> LearnableMovesByPokemonId { get; }
+
     private GameData(
         FrozenDictionary<int, PokemonInfo> pokemonById,
         FrozenDictionary<int, PokemonTypeInfo> typesById,
         FrozenDictionary<int, PokemonMoveInfo> movesById,
-        FrozenDictionary<(int AttackTypeId, int DefendTypeId), double> effectivenessByType)
+        FrozenDictionary<(int AttackTypeId, int DefendTypeId), double> effectivenessByType,
+        FrozenDictionary<int, FrozenSet<int>> learnableMovesByPokemonId)
     {
         PokemonById = pokemonById;
         TypesById = typesById;
         MovesById = movesById;
         EffectivenessByType = effectivenessByType;
+        LearnableMovesByPokemonId = learnableMovesByPokemonId;
     }
 
     public static GameData Load(string databasePath)
@@ -65,7 +69,30 @@ internal sealed class GameData
                 !types.ContainsKey(pair.AttackTypeId) || !types.ContainsKey(pair.DefendTypeId)))
             throw new InvalidDataException("타입 상성표에 누락되거나 유효하지 않은 조합이 있습니다.");
 
-        return new GameData(pokemon, types, moves, effectiveness);
+        var learnsets = LoadLearnsets(connection, pokemon, moves);
+        return new GameData(pokemon, types, moves, effectiveness, learnsets);
+    }
+
+    private static FrozenDictionary<int, FrozenSet<int>> LoadLearnsets(
+        SqliteConnection connection, FrozenDictionary<int, PokemonInfo> pokemon,
+        FrozenDictionary<int, PokemonMoveInfo> moves)
+    {
+        var learnsets = pokemon.Keys.ToDictionary(id => id, _ => new HashSet<int>());
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT pokemon_id, move_id FROM PokemonLearnset";
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            int pokemonId = reader.GetInt32(0);
+            int moveId = reader.GetInt32(1);
+            if (!learnsets.TryGetValue(pokemonId, out var ids) || !moves.ContainsKey(moveId))
+                throw new InvalidDataException($"잘못된 습득 기술 연결: {pokemonId}, {moveId}");
+            if (!ids.Add(moveId))
+                throw new InvalidDataException($"중복된 습득 기술 연결: {pokemonId}, {moveId}");
+        }
+        if (learnsets.Values.Any(ids => ids.Count == 0))
+            throw new InvalidDataException("포켓몬의 습득 기술 목록이 누락되었습니다.");
+        return learnsets.ToFrozenDictionary(pair => pair.Key, pair => pair.Value.ToFrozenSet());
     }
 
     public double GetMultiplier(int attackTypeId, int defendTypeId) =>
